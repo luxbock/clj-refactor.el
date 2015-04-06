@@ -366,23 +366,17 @@ list of (fn args) to pass to `apply''"
                          "-not -regex \".*svn.*\""
                          1000))))
 
-(defun cljr--rename-file (filename new-name)
-  (let ((old-ns (clojure-find-ns)))
-    (rename-file filename new-name 1)
-    (rename-buffer new-name)
-    (set-visited-file-name new-name)
-    (clojure-update-ns)
-    (let ((old-syntax (char-to-string (char-syntax ?/))))
-      (modify-syntax-entry ?/ " ")
-      (save-window-excursion
-        (save-excursion
-          (ignore-errors
-            (tags-query-replace (concat (regexp-quote old-ns) "\\_>")
-                                (clojure-expected-ns) nil
-                                '(cljr--project-files)))))
-      (modify-syntax-entry ?/ old-syntax))
-    (save-buffer)
-    (save-some-buffers)))
+(defun cljr--rename-file (old-name new-name)
+  (let ((changed-files (cljr--call-middleware-sync (list "op" "move-file" "old-path" old-name
+                                                         "new-path" new-name)
+                                                   "dependents")))
+    (save-excursion
+      (dolist (f changed-files)
+        (find-file-literally)
+        (clojure-mode 1)
+        (indent-region (point-min) (point-max))
+        (kill-buffer))))
+  (message "Renamed %s to %s" old-name new-name))
 
 ;;;###autoload
 (defun cljr-rename-file ()
@@ -392,7 +386,7 @@ list of (fn args) to pass to `apply''"
         (filename (buffer-file-name)))
     (if (not (and filename (file-exists-p filename)))
         (error "Buffer '%s' is not visiting a file!" name)
-      (let ((new-name (read-file-name "New name: " filename)))
+      (let ((new-name (expand-file-name (read-file-name "New name: " (file-name-directory filename)))))
         (if (get-buffer new-name)
             (error "A buffer named '%s' already exists!" new-name)
           (cljr--rename-file filename new-name)
